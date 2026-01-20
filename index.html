@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>덴탈프라이스 (DentalPrice) - 스마트 자재 관리</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Lucide Icons (React version handled via custom wrapper in script) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f8fafc; /* Slate-50 */
+        }
+        
+        /* Chart Container Styling Requirements */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 100%; /* Responsive within grid */
+            height: 300px;
+            max-height: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+
+        /* Custom Scrollbar for sleek look */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+    
+    <!-- Chosen Palette: Dental Blue & Slate (Clean, Medical, Trustworthy) -->
+    <!-- Application Structure Plan:
+         1. Layout: Responsive Sidebar (Collapsible on mobile) + Main Content Area.
+         2. Navigation: Two main pillars - 'Price Comparison' (Public) and 'Smart Inventory' (Private).
+         3. Price View: Search-driven, card-based layout focusing on 'Unit Price' and 'Substitute Recommendations'.
+         4. Inventory View: 
+            - Guest: Teaser UI with blurred data to incentivize login.
+            - Member: Dashboard with 3 sections: Alerts (Actionable), Analytics (Visual Spend Trends), and History (Groupable Data Table).
+         5. Interaction: Global State for Login/Guest, Filter logic for categories, Dynamic Charts based on history data.
+    -->
+    <!-- Visualization & Content Choices:
+         1. Product Cards: Clear hierarchy (Category -> Name -> Price -> Unit Price). Uses color coding for 'Lowest Price'.
+         2. Inventory Alerts: Card-based with D-Day calculation. Critical items highlighted in Red/Yellow.
+         3. Spending Chart: Chart.js Line Chart to visualize monthly spending trends from purchase history. Helps users see financial impact.
+         4. Grouped History: Dynamic table that switches between flat list and time-period grouping (Month/Quarter) for better data synthesis.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used (Lucide icons via script). NO Mermaid JS used. -->
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- Icons Wrapper for Lucide ---
+        const Icon = ({ name, size = 20, className = "" }) => {
+            React.useEffect(() => {
+                lucide.createIcons();
+            }, [name]);
+            return <i data-lucide={name} width={size} height={size} className={className}></i>;
+        };
+
+        // --- Mock Data ---
+        const MOCK_PRODUCTS = [
+            {
+                id: 1,
+                name: "3M Filtek Z250 유니버설 레진",
+                category: "수복재료",
+                capacity: 4,
+                unit: "g",
+                vendors: [
+                    { name: "덴탈모아", price: 42000 },
+                    { name: "이덴트", price: 43500 },
+                    { name: "치과재료나라", price: 41000 },
+                    { name: "DV몰", price: 42900 }, 
+                ],
+                specs: ["4g Syringe", "A2 Shade", "Microhybrid"],
+            },
+            {
+                id: 2,
+                name: "Tokuyama Palfique Estelite Sigma Quick",
+                category: "수복재료",
+                capacity: 3.8,
+                unit: "g",
+                vendors: [
+                    { name: "덴탈모아", price: 38000 },
+                    { name: "이덴트", price: 39500 },
+                    { name: "세일치과", price: 38500 },
+                ],
+                specs: ["3.8g", "A2 Shade", "Sub-micron"],
+            },
+            {
+                id: 3,
+                name: "GC Fuji I Luting Cement",
+                category: "접착/시멘트",
+                capacity: 1,
+                unit: "set",
+                vendors: [
+                    { name: "오스템몰", price: 85000 },
+                    { name: "덴탈모아", price: 83000 },
+                ],
+                specs: ["35g Powder", "20ml Liquid", "Glass Ionomer"],
+            },
+            {
+                id: 4,
+                name: "Kerr OptiBond Universal",
+                category: "접착/시멘트",
+                capacity: 5,
+                unit: "ml",
+                vendors: [
+                    { name: "이덴트", price: 62000 },
+                    { name: "오스템몰", price: 65000 },
+                    { name: "재료나라", price: 61500 },
+                ],
+                specs: ["5ml Bottle", "Single Component"],
+            },
+            {
+                id: 5,
+                name: "Osstem Hi-Speed Bur (Round)",
+                category: "버/파일",
+                capacity: 5,
+                unit: "ea",
+                vendors: [
+                    { name: "오스템몰", price: 15000 },
+                    { name: "덴탈모아", price: 14500 },
+                ],
+                specs: ["5ea/pack", "Round #4", "Tungsten Carbide"],
+            },
+        ];
+
+        // Extended History for Chart Data
+        const MOCK_HISTORY = [
+            { id: 101, productName: "3M Filtek Z250", purchaseDate: "2023-12-01", quantity: 5, cycleDays: 60, price: 41000 },
+            { id: 102, productName: "GC Fuji I Luting", purchaseDate: "2023-11-15", quantity: 2, cycleDays: 90, price: 83000 },
+            { id: 103, productName: "Kerr OptiBond", purchaseDate: "2023-10-05", quantity: 1, cycleDays: 45, price: 62000 },
+            { id: 104, productName: "Osstem Bur #4", purchaseDate: "2023-08-20", quantity: 10, cycleDays: 30, price: 15000 },
+            { id: 105, productName: "Tokuyama Resin", purchaseDate: "2023-05-10", quantity: 3, cycleDays: 50, price: 38000 },
+            { id: 106, productName: "3M Filtek Z250", purchaseDate: "2023-04-01", quantity: 5, cycleDays: 60, price: 41500 },
+            { id: 107, productName: "GC Fuji I Luting", purchaseDate: "2023-03-10", quantity: 2, cycleDays: 90, price: 84000 },
+            { id: 108, productName: "Osstem Bur #4", purchaseDate: "2023-02-15", quantity: 5, cycleDays: 30, price: 15000 },
+        ];
+
+        // --- Helper Functions ---
+        const calculateUnitPrice = (price, capacity, unit) => {
+            if (unit === 'set') return null;
+            const unitPrice = Math.round(price / capacity);
+            return `1${unit}당 ${unitPrice.toLocaleString()}원`;
+        };
+
+        const getNextPurchaseDate = (dateStr, cycleDays) => {
+            const date = new Date(dateStr);
+            date.setDate(date.getDate() + parseInt(cycleDays));
+            return date;
+        };
+
+        const getDDay = (targetDate) => {
+            const today = new Date();
+            const target = new Date(targetDate);
+            const diffTime = target - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            return diffDays;
+        };
+
+        const getPeriodLabel = (dateStr, type) => {
+            const date = new Date(dateStr);
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+
+            if (type === 'year') return `${year}년`;
+            if (type === 'half') return `${year}년 ${month <= 6 ? '상반기' : '하반기'}`;
+            if (type === 'quarter') return `${year}년 ${Math.ceil(month / 3)}분기`;
+            return `${year}년 ${month}월`;
+        };
+
+        const formatCurrency = (amount) => {
+            return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount);
+        };
+
+        // --- Components ---
+
+        // 1. Sidebar Component
+        const Sidebar = ({ activeView, setActiveView, isLoggedIn, setIsLoggedIn, selectedCategory, setSelectedCategory, isMobileOpen, setIsMobileOpen }) => {
+            const categories = ['전체', '수복재료', '접착/시멘트', '인상재', '버/파일', '근관치료', '위생/방역'];
+
+            return (
+                <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+                    <div className="flex items-center justify-between h-16 px-6 border-b border-slate-100">
+                        <div className="flex items-center gap-2 font-bold text-xl text-slate-800">
+                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">+</div>
+                            DentalPrice
+                        </div>
+                        <button className="md:hidden text-slate-500" onClick={() => setIsMobileOpen(false)}>
+                            <Icon name="x" size={24} />
+                        </button>
+                    </div>
+
+                    <div className="p-4 flex flex-col h-[calc(100%-4rem)]">
+                        <div className="space-y-1 mb-8">
+                            <button 
+                                onClick={() => { setActiveView('price'); setIsMobileOpen(false); }}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeView === 'price' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                <Icon name="search" size={18} />
+                                가격비교 (전체)
+                            </button>
+                            <button 
+                                onClick={() => { setActiveView('inventory'); setIsMobileOpen(false); }}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeView === 'inventory' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                <Icon name="bar-chart-3" size={18} />
+                                스마트 재고관리
+                                {!isLoggedIn && <Icon name="lock" size={14} className="ml-auto opacity-50" />}
+                            </button>
+                        </div>
+
+                        {activeView === 'price' && (
+                            <div className="mb-6 animate-fade-in">
+                                <h3 className="px-4 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">카테고리</h3>
+                                <div className="space-y-1">
+                                    {categories.map(cat => (
+                                        <button
+                                            key={cat}
+                                            onClick={() => { setSelectedCategory(cat); setIsMobileOpen(false); }}
+                                            className={`w-full flex items-center justify-between px-4 py-2 text-sm rounded-lg transition-colors ${selectedCategory === cat ? 'bg-slate-100 text-slate-900 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}
+                                        >
+                                            {cat}
+                                            {selectedCategory === cat && <Icon name="chevron-right" size={14} />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="mt-auto">
+                            {!isLoggedIn ? (
+                                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100 text-center">
+                                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-indigo-600">
+                                        <Icon name="zap" size={20} />
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 text-sm mb-1">재고 관리가 어렵나요?</h4>
+                                    <p className="text-xs text-slate-500 mb-3">AI가 재구매 시점을 예측해드립니다.</p>
+                                    <button 
+                                        onClick={() => setIsLoggedIn(true)}
+                                        className="w-full py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                                    >
+                                        로그인하고 무료 체험
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">Dr</div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-slate-900 truncate">김원장님</p>
+                                        <p className="text-xs text-slate-500 truncate">서울덴탈클리닉</p>
+                                    </div>
+                                    <button onClick={() => setIsLoggedIn(false)} className="text-slate-400 hover:text-red-500">
+                                        <Icon name="log-out" size={18} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 2. Price Comparison View
+        const PriceView = ({ searchQuery, selectedCategory }) => {
+            const filteredProducts = MOCK_PRODUCTS.filter(product => {
+                const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+                const matchesCategory = selectedCategory === '전체' || product.category === selectedCategory;
+                return matchesSearch && matchesCategory;
+            });
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-1">{selectedCategory} 가격비교</h2>
+                            <p className="text-slate-500 text-sm">주요 쇼핑몰의 일반 판매가 기준 최저가 리스트입니다.</p>
+                        </div>
+                        <div className="text-sm font-medium text-slate-600 bg-slate-100 px-3 py-1 rounded-full">
+                            총 <span className="text-blue-600">{filteredProducts.length}</span>개 상품
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4">
+                        {filteredProducts.map(product => {
+                            const sortedVendors = [...product.vendors].sort((a, b) => a.price - b.price);
+                            const lowest = sortedVendors[0];
+                            
+                            // Find substitutes: same category, different ID, lower price
+                            const substitutes = MOCK_PRODUCTS
+                                .filter(p => p.category === product.category && p.id !== product.id)
+                                .map(p => ({
+                                    ...p, 
+                                    lowestPrice: Math.min(...p.vendors.map(v => v.price))
+                                }))
+                                .filter(p => p.lowestPrice < lowest.price)
+                                .sort((a, b) => a.lowestPrice - b.lowestPrice)
+                                .slice(0, 2);
+
+                            return (
+                                <div key={product.id} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow">
+                                    <div className="flex flex-col md:flex-row gap-6">
+                                        <div className="w-full md:w-48 h-48 bg-slate-50 rounded-lg flex flex-col items-center justify-center text-slate-300 relative overflow-hidden shrink-0">
+                                            <Icon name="package" size={48} />
+                                            {product.unit !== 'set' && (
+                                                <div className="absolute bottom-0 w-full bg-slate-200 text-slate-600 text-xs text-center py-1 font-medium">
+                                                    {product.capacity}{product.unit} 기준
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-600 mb-1">{product.category}</span>
+                                                    <h3 className="text-lg font-bold text-slate-900 truncate">{product.name}</h3>
+                                                    <div className="flex gap-2 mt-1">
+                                                        {product.specs.map((spec, i) => (
+                                                            <span key={i} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{spec}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-xs text-slate-500 mb-0.5">일반 최저가</div>
+                                                    <div className="text-2xl font-bold text-slate-900">{lowest.price.toLocaleString()}원</div>
+                                                    {product.unit !== 'set' && (
+                                                        <div className="text-xs text-blue-600 font-medium flex items-center justify-end gap-1 mt-1">
+                                                            <Icon name="calculator" size={10} />
+                                                            {calculateUnitPrice(lowest.price, product.capacity, product.unit)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-4 border border-slate-100 rounded-lg overflow-hidden">
+                                                <table className="w-full text-sm text-left">
+                                                    <thead className="bg-slate-50 text-slate-500 font-medium text-xs">
+                                                        <tr>
+                                                            <th className="px-3 py-2">쇼핑몰</th>
+                                                            <th className="px-3 py-2 text-right">판매가</th>
+                                                            <th className="px-3 py-2 text-right">단위당</th>
+                                                            <th className="px-3 py-2 text-center">링크</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100">
+                                                        {sortedVendors.map((v, idx) => (
+                                                            <tr key={idx} className={idx === 0 ? "bg-blue-50/30" : ""}>
+                                                                <td className="px-3 py-2 text-slate-700 flex items-center gap-2">
+                                                                    {v.name}
+                                                                    {idx === 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 rounded font-bold">최저가</span>}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-right font-medium">{v.price.toLocaleString()}원</td>
+                                                                <td className="px-3 py-2 text-right text-xs text-slate-500">
+                                                                    {calculateUnitPrice(v.price, product.capacity, product.unit) || '-'}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-center">
+                                                                    <button className="p-1 hover:text-blue-600"><Icon name="external-link" size={14} /></button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            {substitutes.length > 0 && (
+                                                <div className="mt-4 pt-3 border-t border-slate-100">
+                                                    <div className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2">
+                                                        <Icon name="trending-down" size={16} className="text-emerald-500" />
+                                                        더 저렴한 가성비 대체품 추천
+                                                    </div>
+                                                    <div className="flex flex-col sm:flex-row gap-3">
+                                                        {substitutes.map(sub => (
+                                                            <div key={sub.id} className="flex-1 flex items-center justify-between p-3 bg-emerald-50/50 border border-emerald-100 rounded-lg hover:border-emerald-300 cursor-pointer transition-colors group/sub">
+                                                                <div className="min-w-0">
+                                                                    <div className="text-xs font-bold text-emerald-600 mb-0.5">SAVE</div>
+                                                                    <div className="text-sm font-medium text-slate-800 truncate">{sub.name}</div>
+                                                                </div>
+                                                                <div className="text-right pl-2">
+                                                                    <div className="text-sm font-bold text-emerald-700">{sub.lowestPrice.toLocaleString()}원</div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        // 3. Inventory View (Teaser + Dashboard)
+        const InventoryView = ({ isLoggedIn, setIsLoggedIn, purchaseHistory }) => {
+            const [viewMode, setViewMode] = React.useState('list'); // list | period
+            const [periodType, setPeriodType] = React.useState('month'); // month | quarter | year
+            
+            // Chart Logic
+            const chartCanvasRef = React.useRef(null);
+            const chartInstanceRef = React.useRef(null);
+
+            React.useEffect(() => {
+                if (!isLoggedIn || !chartCanvasRef.current) return;
+
+                // Prepare Data: Aggregate monthly spending
+                const monthlyData = {};
+                purchaseHistory.forEach(item => {
+                    const date = new Date(item.purchaseDate);
+                    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    const cost = item.price * item.quantity; // Total cost for that purchase
+                    monthlyData[key] = (monthlyData[key] || 0) + cost;
+                });
+
+                // Fill missing months for a smooth line (last 12 months logic could be added, simplified here)
+                const sortedKeys = Object.keys(monthlyData).sort();
+                const labels = sortedKeys;
+                const dataPoints = sortedKeys.map(k => monthlyData[k]);
+
+                if (chartInstanceRef.current) {
+                    chartInstanceRef.current.destroy();
+                }
+
+                const ctx = chartCanvasRef.current.getContext('2d');
+                chartInstanceRef.current = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '월별 재료비 지출',
+                            data: dataPoints,
+                            borderColor: '#4f46e5', // Indigo-600
+                            backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#4f46e5',
+                            pointRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return formatCurrency(context.raw);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#f1f5f9' },
+                                ticks: {
+                                    callback: function(value) {
+                                        return value >= 10000 ? (value / 10000) + '만' : value;
+                                    }
+                                }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                return () => {
+                    if (chartInstanceRef.current) chartInstanceRef.current.destroy();
+                };
+            }, [isLoggedIn, purchaseHistory]);
+
+
+            // Logic for Alerts
+            const suggestions = purchaseHistory.map(item => {
+                const nextDate = getNextPurchaseDate(item.purchaseDate, item.cycleDays);
+                const dDay = getDDay(nextDate);
+                return { ...item, nextDate, dDay };
+            }).filter(item => item.dDay <= 14);
+
+            // Grouping Logic for Table
+            const getGroupedHistory = () => {
+                const groups = {};
+                const sorted = [...purchaseHistory].sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate));
+                sorted.forEach(item => {
+                    const label = getPeriodLabel(item.purchaseDate, periodType);
+                    if (!groups[label]) groups[label] = [];
+                    groups[label].push(item);
+                });
+                return groups;
+            };
+
+            if (!isLoggedIn) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+                        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-200 relative">
+                            {/* Teaser Header */}
+                            <div className="bg-slate-900 text-white p-10">
+                                <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-500/20 rounded-full mb-6">
+                                    <Icon name="bar-chart-3" size={32} className="text-indigo-400" />
+                                </div>
+                                <h2 className="text-3xl font-bold mb-3">우리 병원 재고, 언제 떨어질까?</h2>
+                                <p className="text-slate-300 text-lg leading-relaxed">
+                                    구매 이력만 입력하면 AI가 재구매 시점을 예측해드립니다.<br/>
+                                    더 이상 재료가 떨어져서 당황하지 마세요.
+                                </p>
+                            </div>
+
+                            {/* Blurred Content */}
+                            <div className="relative p-8 bg-slate-50 min-h-[300px]">
+                                <div className="absolute inset-0 bg-white/60 backdrop-blur-md z-10 flex flex-col items-center justify-center p-6">
+                                    <Icon name="lock" size={48} className="text-slate-400 mb-4" />
+                                    <h3 className="text-xl font-bold text-slate-800 mb-2">회원 전용 기능입니다</h3>
+                                    <p className="text-slate-500 mb-8">로그인 후 재고 관리 대시보드를 확인해보세요.</p>
+                                    <button 
+                                        onClick={() => setIsLoggedIn(true)}
+                                        className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full shadow-lg transition-transform hover:scale-105 flex items-center gap-2"
+                                    >
+                                        <Icon name="user" size={18} />
+                                        로그인하고 무료로 시작하기
+                                    </button>
+                                </div>
+                                
+                                {/* Dummy visual for background */}
+                                <div className="opacity-40 pointer-events-none filter blur-sm">
+                                    <div className="grid grid-cols-2 gap-4 mb-6">
+                                        <div className="h-32 bg-white rounded-xl border border-slate-200"></div>
+                                        <div className="h-32 bg-white rounded-xl border border-slate-200"></div>
+                                    </div>
+                                    <div className="h-48 bg-white rounded-xl border border-slate-200"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="space-y-8 animate-fade-in-up">
+                    {/* 1. Alerts Section */}
+                    <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-6 md:p-8 text-white shadow-lg">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                            <div>
+                                <h2 className="text-2xl font-bold flex items-center gap-2">
+                                    <Icon name="bell" className="animate-bounce" /> 스마트 재고 알림
+                                </h2>
+                                <p className="text-indigo-100 mt-1">
+                                    재구매가 필요한 품목이 <span className="font-bold text-yellow-300 underline underline-offset-4">{suggestions.length}개</span> 있습니다.
+                                </p>
+                            </div>
+                            <button className="bg-white/10 hover:bg-white/20 backdrop-blur-md px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 border border-white/20">
+                                <Icon name="plus" size={16} /> 이력 추가
+                            </button>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
+                            {suggestions.map((item, idx) => (
+                                <div key={idx} className="bg-white text-slate-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm border-l-4 border-red-500">
+                                    <div className="flex items-start gap-4 w-full md:w-auto">
+                                        <div className="p-3 bg-red-50 text-red-600 rounded-full shrink-0">
+                                            <Icon name="alert-circle" size={24} />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-lg font-bold">{item.productName}</h4>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${item.dDay < 0 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                    {item.dDay < 0 ? `D+${Math.abs(item.dDay)}일 지남` : `D-${item.dDay}일 남음`}
+                                                </span>
+                                                <span className="text-sm text-slate-500">예상 소진: {item.nextDate.toLocaleDateString()}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                                        <button className="flex-1 md:flex-none px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-sm font-bold border border-emerald-200 flex items-center justify-center gap-2 transition-colors">
+                                            <Icon name="trending-down" size={16} /> 대체품
+                                        </button>
+                                        <button className="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 transition-colors">
+                                            <Icon name="search" size={16} /> 최저가
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {suggestions.length === 0 && (
+                                <div className="bg-white/10 rounded-xl p-6 text-center text-indigo-100 border border-white/10">
+                                    <Icon name="check-circle" className="mx-auto mb-2 text-emerald-300" size={32} />
+                                    <p>현재 모든 재고가 넉넉합니다.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* 2. Analytics Chart */}
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                <Icon name="trending-up" size={20} className="text-indigo-500" />
+                                월간 재료비 지출 추이
+                            </h3>
+                        </div>
+                        <div className="chart-container">
+                            <canvas ref={chartCanvasRef}></canvas>
+                        </div>
+                    </div>
+
+                    {/* 3. History Table */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                <Icon name="history" size={20} /> 구매 관리 내역
+                            </h3>
+                            
+                            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg self-stretch md:self-auto">
+                                <button 
+                                    onClick={() => setViewMode('list')}
+                                    className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1 transition-all ${viewMode === 'list' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <Icon name="list" size={14} /> 목록
+                                </button>
+                                <button 
+                                    onClick={() => setViewMode('period')}
+                                    className={`flex-1 md:flex-none px-3 py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1 transition-all ${viewMode === 'period' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <Icon name="calendar-days" size={14} /> 시기별
+                                </button>
+                            </div>
+                        </div>
+
+                        {viewMode === 'period' && (
+                            <div className="px-6 py-3 border-b border-slate-100 flex gap-2 overflow-x-auto">
+                                {[
+                                    { id: 'month', label: '월별' },
+                                    { id: 'quarter', label: '분기별' },
+                                    { id: 'half', label: '반기별' },
+                                    { id: 'year', label: '연간' },
+                                ].map(opt => (
+                                    <button
+                                        key={opt.id}
+                                        onClick={() => setPeriodType(opt.id)}
+                                        className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap transition-colors ${periodType === opt.id ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="overflow-x-auto">
+                            {viewMode === 'list' ? (
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                                        <tr>
+                                            <th className="p-4 whitespace-nowrap">제품명</th>
+                                            <th className="p-4 whitespace-nowrap">구매일</th>
+                                            <th className="p-4 whitespace-nowrap text-right">금액</th>
+                                            <th className="p-4 whitespace-nowrap text-center">주기</th>
+                                            <th className="p-4 whitespace-nowrap text-center">상태</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {purchaseHistory.map(item => (
+                                            <tr key={item.id} className="hover:bg-slate-50/50">
+                                                <td className="p-4 font-medium text-slate-900">{item.productName}</td>
+                                                <td className="p-4 text-slate-600">{item.purchaseDate}</td>
+                                                <td className="p-4 text-right font-medium text-slate-800">{(item.price * item.quantity).toLocaleString()}원</td>
+                                                <td className="p-4 text-center text-slate-500">{item.cycleDays}일</td>
+                                                <td className="p-4 text-center">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-700 border border-green-100">
+                                                        관리중
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="divide-y divide-slate-100">
+                                    {Object.entries(getGroupedHistory()).map(([label, items]) => {
+                                        const totalPeriodCost = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+                                        return (
+                                            <div key={label}>
+                                                <div className="bg-slate-50/80 px-6 py-3 flex justify-between items-center border-b border-slate-100/50">
+                                                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                                        <Icon name="calendar" size={14} className="text-blue-500" />
+                                                        {label}
+                                                    </h4>
+                                                    <div className="text-xs flex items-center gap-3">
+                                                        <span className="text-slate-500">{items.length}건</span>
+                                                        <span className="font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                                            합계: {formatCurrency(totalPeriodCost)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <table className="w-full text-left text-sm">
+                                                    <tbody className="divide-y divide-slate-50/50">
+                                                        {items.map(item => (
+                                                            <tr key={item.id} className="hover:bg-white transition-colors">
+                                                                <td className="p-4 pl-8 font-medium text-slate-700 w-1/3">{item.productName}</td>
+                                                                <td className="p-4 text-slate-400 text-xs w-1/4">{item.purchaseDate}</td>
+                                                                <td className="p-4 text-right pr-6">
+                                                                    <div className="font-semibold text-slate-700">{(item.price * item.quantity).toLocaleString()}원</div>
+                                                                    <div className="text-xs text-slate-400">{item.quantity}개 × {item.price.toLocaleString()}</div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 4. Main App Component
+        const App = () => {
+            const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+            const [activeView, setActiveView] = React.useState('price'); // 'price' | 'inventory'
+            const [searchQuery, setSearchQuery] = React.useState('');
+            const [selectedCategory, setSelectedCategory] = React.useState('전체');
+            const [isMobileOpen, setIsMobileOpen] = React.useState(false);
+
+            return (
+                <div className="flex h-screen bg-slate-50/50">
+                    <Sidebar 
+                        activeView={activeView} 
+                        setActiveView={setActiveView}
+                        isLoggedIn={isLoggedIn}
+                        setIsLoggedIn={setIsLoggedIn}
+                        selectedCategory={selectedCategory}
+                        setSelectedCategory={setSelectedCategory}
+                        isMobileOpen={isMobileOpen}
+                        setIsMobileOpen={setIsMobileOpen}
+                    />
+                    
+                    <div className="flex-1 flex flex-col min-w-0 md:ml-64 transition-all duration-300">
+                        {/* Mobile Header */}
+                        <header className="md:hidden bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 sticky top-0 z-30">
+                            <button onClick={() => setIsMobileOpen(true)} className="text-slate-600">
+                                <Icon name="menu" size={24} />
+                            </button>
+                            <span className="font-bold text-lg text-slate-800">DentalPrice</span>
+                            <div className="w-6"></div> {/* Spacer */}
+                        </header>
+
+                        {/* Top Bar (Desktop) - Search & Actions */}
+                        <div className="hidden md:flex items-center justify-between h-16 px-8 bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-20">
+                            <div className="flex-1 max-w-xl relative">
+                                {activeView === 'price' && (
+                                    <>
+                                        <input 
+                                            type="text" 
+                                            placeholder="제품명, 브랜드, 스펙 검색..." 
+                                            className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-full text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                        />
+                                        <Icon name="search" size={18} className="absolute left-3 top-2.5 text-slate-400" />
+                                    </>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button className="p-2 text-slate-400 hover:text-slate-600 relative">
+                                    <Icon name="bell" size={20} />
+                                    {isLoggedIn && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>}
+                                </button>
+                                <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-full text-sm font-bold shadow-sm hover:bg-slate-800 transition-colors">
+                                    <Icon name="shopping-cart" size={16} />
+                                    장바구니
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Main Content Area */}
+                        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+                            <div className="max-w-5xl mx-auto">
+                                {activeView === 'price' && (
+                                    <PriceView 
+                                        searchQuery={searchQuery} 
+                                        selectedCategory={selectedCategory} 
+                                    />
+                                )}
+                                {activeView === 'inventory' && (
+                                    <InventoryView 
+                                        isLoggedIn={isLoggedIn} 
+                                        setIsLoggedIn={setIsLoggedIn}
+                                        purchaseHistory={MOCK_HISTORY}
+                                    />
+                                )}
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
