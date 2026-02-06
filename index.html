@@ -1,138 +1,144 @@
+# ==============================================================================
+# [필수] 실행 전 터미널(명령 프롬프트)에 아래 명령어를 입력해서 설치해주세요!
+# pip install selenium webdriver-manager
+# ==============================================================================
+
 import time
-import requests
-import random
-from urllib.parse import urlparse
+import sys
 
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+# 라이브러리 설치 여부 확인
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.chrome.options import Options
+    from webdriver_manager.chrome import ChromeDriverManager
+except ImportError:
+    print("\n❌ 오류: 필수 라이브러리가 설치되지 않았습니다.")
+    print("   터미널에 다음 명령어를 입력해서 설치해주세요:")
+    print("   pip install selenium webdriver-manager\n")
+    sys.exit(1)
 
 # ==============================================================================
-# [설정] Supabase 접속 정보만 있으면 됩니다!
+# [설정 구역] 자주 가는 쇼핑몰들을 여기에 등록하세요!
 # ==============================================================================
-SUPABASE_URL = "https://kkdwgmpexkuwqyzkgvrh.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrZHdnbXBleGt1d3F5emtndnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NjA2NjgsImV4cCI6MjA4NDQzNjY2OH0.f1AOisSfwWEdrW3XdfurGT0-PT4wqrcoAVpsjzgzD1I"
 
-headers = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json"
+MY_SITES = {
+    # [1] 덴탈모아 (예시)
+    "dentalmore": {
+        "name": "덴탈모아",
+        # 1. 로그인 정보
+        "login_url": "https://www.dentalmore.com/member/login.html",
+        "id": "doctor1234",
+        "pw": "password!",
+        "selectors": {
+            "id": "#member_id",      # 아이디 입력창
+            "pw": "#member_passwd",  # 비번 입력창
+        },
+        # 2. 검색 설정 (검색어 부분은 {}로 비워두세요)
+        "search_url": "https://www.dentalmore.com/shop/search.php?q={}",
+        # 3. 결과 긁어오기 설정 (F12로 찾아야 함)
+        "result_selectors": {
+            "item": ".product_item", # 상품 1개를 감싸는 박스
+            "name": ".name",         # 상품명
+            "price": ".price"        # 가격
+        }
+    },
+    
+    # [2] 이덴트 (직접 채워보세요!)
+    "ident": {
+        "name": "이덴트",
+        "login_url": "https://www.ident.co.kr/login",
+        "id": "my_id",
+        "pw": "my_pw",
+        "selectors": {
+            "id": "#login_id",
+            "pw": "#login_pw",
+        },
+        "search_url": "https://www.ident.co.kr/search?keyword={}",
+        "result_selectors": {
+            "item": ".goods_list li", # 리스트의 각 항목
+            "name": ".goods_name",
+            "price": ".goods_price"
+        }
+    }
 }
 
-def get_vendors_from_db():
-    """DB에서 쇼핑몰 로그인 정보 가져오기"""
-    print("📋 쇼핑몰 설정(Vendors)을 가져옵니다...")
+# ==============================================================================
+
+def run_personal_searcher():
+    # 1. 검색어 입력 받기
+    keyword = input("\n🔎 검색할 품목명을 입력하세요 (예: Z250): ")
+    if not keyword: return
+
+    print("\n🤖 브라우저를 실행합니다...")
+    chrome_options = Options()
+    # chrome_options.add_argument("--headless") # 브라우저 창 안 보려면 주석 해제
+    
     try:
-        url = f"{SUPABASE_URL}/rest/v1/vendors?select=*"
-        res = requests.get(url, headers=headers)
-        res.raise_for_status()
-        return res.json()
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        driver.implicitly_wait(5)
     except Exception as e:
-        print(f"❌ 설정 가져오기 실패: {e}")
-        return []
-
-def get_tasks_from_db():
-    """DB에서 크롤링할 상품 URL 가져오기"""
-    try:
-        url = f"{SUPABASE_URL}/rest/v1/vendor_products?select=*&is_active=eq.true"
-        res = requests.get(url, headers=headers)
-        return res.json()
-    except:
-        return []
-
-def save_price(vp_id, price):
-    try:
-        data = {"vendor_product_id": vp_id, "price": price}
-        requests.post(f"{SUPABASE_URL}/rest/v1/prices", headers=headers, json=data)
-        print(f"   💾 저장: {price:,}원")
-    except:
-        pass
-
-def clean_price(text):
-    try:
-        return int(text.replace(",", "").replace("원", "").strip())
-    except:
-        return 0
-
-def run_crawler():
-    # 1. DB에서 모든 정보 가져오기
-    vendors = get_vendors_from_db() # 쇼핑몰 정보 (아이디/비번 포함)
-    tasks = get_tasks_from_db()     # 상품 URL 목록
-
-    if not vendors or not tasks:
-        print("설정이나 할 일이 없습니다. 웹사이트 '쇼핑몰 관리'에서 설정을 추가해주세요.")
+        print(f"\n❌ 브라우저 실행 중 오류 발생: {e}")
+        print("   (크롬 브라우저가 설치되어 있는지 확인해주세요.)")
         return
 
-    # 2. 쇼핑몰 ID 기준으로 매핑 (편리한 조회를 위해)
-    vendor_map = {v['id']: v for v in vendors}
+    print(f"\n--- '{keyword}' 가격 검색 시작 ---\n")
 
-    # 3. 쇼핑몰별로 할 일 분류
-    grouped_tasks = {}
-    for task in tasks:
-        v_id = task['vendor_id']
-        if v_id not in grouped_tasks: grouped_tasks[v_id] = []
-        grouped_tasks[v_id].append(task)
+    for site_key, config in MY_SITES.items():
+        site_name = config['name']
+        print(f"🏢 [{site_name}] 접속 중...")
 
-    # 4. 브라우저 시작
-    chrome_options = Options()
-    # chrome_options.add_argument("--headless") # 화면 없이 실행하려면 주석 해제
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    driver.implicitly_wait(5)
+        try:
+            # 1. 로그인 (먼저 로그인해야 회원가가 보임)
+            driver.get(config['login_url'])
+            time.sleep(1)
+            
+            # 이미 로그인 되어 있는지 체크하는 로직은 생략 (단순화)
+            try:
+                driver.find_element(By.CSS_SELECTOR, config['selectors']['id']).send_keys(config['id'])
+                driver.find_element(By.CSS_SELECTOR, config['selectors']['pw']).send_keys(config['pw'])
+                driver.find_element(By.CSS_SELECTOR, config['selectors']['pw']).send_keys(Keys.RETURN)
+                time.sleep(2) # 로그인 대기
+            except:
+                print("   (이미 로그인 상태이거나 입력창을 못 찾음)")
 
-    try:
-        # 5. 쇼핑몰별 순회
-        for v_id, vendor_tasks in grouped_tasks.items():
-            config = vendor_map.get(v_id)
-            if not config: continue
+            # 2. 검색 페이지로 바로 이동
+            # 검색창에 타이핑하는 것보다, 주소창에 검색어를 넣는 게 훨씬 빠르고 정확합니다.
+            target_url = config['search_url'].format(keyword)
+            driver.get(target_url)
+            time.sleep(2)
 
-            print(f"\n🏢 [{config['name']}] 작업을 시작합니다.")
-
-            # (1) 로그인
-            if config.get('login_url') and config.get('login_id'):
+            # 3. 결과 긁어오기
+            items = driver.find_elements(By.CSS_SELECTOR, config['result_selectors']['item'])
+            
+            print(f"   ✓ 검색 결과 {len(items)}개 발견")
+            
+            # 상위 3개만 보여주기
+            count = 0
+            for item in items:
+                if count >= 3: break # 너무 많이 나오면 보기 힘드니까 3개만
                 try:
-                    print(f"   🔑 로그인 시도... ({config['login_url']})")
-                    driver.get(config['login_url'])
-                    time.sleep(2)
-                    
-                    # DB에 있는 Selector를 사용하여 입력
-                    if config.get('selector_id'):
-                        driver.find_element(By.CSS_SELECTOR, config['selector_id']).send_keys(config['login_id'])
-                    if config.get('selector_pw'):
-                        driver.find_element(By.CSS_SELECTOR, config['selector_pw']).send_keys(config['login_pw'])
-                        driver.find_element(By.CSS_SELECTOR, config['selector_pw']).send_keys(Keys.RETURN)
-                    
-                    time.sleep(3)
-                    print("   로그인 완료 (추정)")
-                except Exception as e:
-                    print(f"   ⚠️ 로그인 중 오류: {e}")
-            else:
-                print("   (로그인 정보가 없어 건너뜁니다)")
+                    name = item.find_element(By.CSS_SELECTOR, config['result_selectors']['name']).text
+                    price = item.find_element(By.CSS_SELECTOR, config['result_selectors']['price']).text
+                    print(f"      - {name} : {price}")
+                    count += 1
+                except:
+                    continue
+            
+            if count == 0:
+                print("      (상품 정보를 읽지 못했습니다. Selector를 확인하세요)")
 
-            # (2) 상품 가격 수집
-            for task in vendor_tasks:
-                print(f"   ➳ [{task['product_name']}] 이동")
-                try:
-                    driver.get(task['url'])
-                    time.sleep(1.5)
-                    
-                    selector = config.get('selector_price')
-                    if selector:
-                        price_text = driver.find_element(By.CSS_SELECTOR, selector).text
-                        price = clean_price(price_text)
-                        print(f"      가격: {price:,}원")
-                        if price > 0: save_price(task['id'], price)
-                    else:
-                        print("      (가격 Selector 설정이 없습니다)")
-                        
-                except Exception as e:
-                    print(f"      X 실패: {e}")
+        except Exception as e:
+            print(f"   X 오류 발생: {e}")
+        
+        print("-" * 30)
 
-    finally:
-        driver.quit()
-        print("\n🤖 작업 종료")
+    print("\n✨ 모든 검색이 완료되었습니다.")
+    # 결과를 확인하도록 바로 끄지 않고 입력을 기다림
+    input("종료하려면 엔터키를 누르세요...")
+    driver.quit()
 
 if __name__ == "__main__":
-    run_crawler()
+    run_personal_searcher()
