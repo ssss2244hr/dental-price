@@ -1,250 +1,138 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>덴탈프라이스 (DentalPrice) - 실시간 가격비교</title>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <!-- Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Supabase JS -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+import time
+import requests
+import random
+from urllib.parse import urlparse
 
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
-    <style>
-        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    </style>
-    <!-- Chosen Palette: Dental Blue & Slate -->
-    <!-- Application Structure Plan: Connects to Supabase to fetch 'real' crawling data and displays it alongside mock data for MVP demonstration. -->
-    <!-- Visualization & Content Choices: Added a 'Live Data' badge and section to distinguish real DB data from mock prototypes. -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
-</head>
-<body>
-    <div id="root"></div>
+# ==============================================================================
+# [설정] Supabase 접속 정보만 있으면 됩니다!
+# ==============================================================================
+SUPABASE_URL = "https://kkdwgmpexkuwqyzkgvrh.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrZHdnbXBleGt1d3F5emtndnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NjA2NjgsImV4cCI6MjA4NDQzNjY2OH0.f1AOisSfwWEdrW3XdfurGT0-PT4wqrcoAVpsjzgzD1I"
 
-    <script type="text/babel">
-        // --- 1. Supabase Client Setup ---
-        const SUPABASE_URL = "https://kkdwgmpexkuwqyzkgvrh.supabase.co";
-        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrZHdnbXBleGt1d3F5emtndnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NjA2NjgsImV4cCI6MjA4NDQzNjY2OH0.f1AOisSfwWEdrW3XdfurGT0-PT4wqrcoAVpsjzgzD1I";
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+headers = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json"
+}
 
-        // --- Icons Wrapper ---
-        const Icon = ({ name, size = 20, className = "" }) => {
-            React.useEffect(() => { lucide.createIcons(); }, [name]);
-            return <i data-lucide={name} width={size} height={size} className={className}></i>;
-        };
+def get_vendors_from_db():
+    """DB에서 쇼핑몰 로그인 정보 가져오기"""
+    print("📋 쇼핑몰 설정(Vendors)을 가져옵니다...")
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/vendors?select=*"
+        res = requests.get(url, headers=headers)
+        res.raise_for_status()
+        return res.json()
+    except Exception as e:
+        print(f"❌ 설정 가져오기 실패: {e}")
+        return []
 
-        // --- Mock Data (Fallback) ---
-        const MOCK_PRODUCTS = [
-            { id: 1, name: "3M Filtek Z250 (예시)", category: "수복재료", capacity: 4, unit: "g", vendors: [{ name: "덴탈모아", price: 42000 }, { name: "이덴트", price: 43500 }], specs: ["4g Syringe", "A2"] },
-            { id: 2, name: "GC Fuji I Luting (예시)", category: "접착/시멘트", capacity: 1, unit: "set", vendors: [{ name: "오스템몰", price: 85000 }], specs: ["35g Powder"] }
-        ];
+def get_tasks_from_db():
+    """DB에서 크롤링할 상품 URL 가져오기"""
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/vendor_products?select=*&is_active=eq.true"
+        res = requests.get(url, headers=headers)
+        return res.json()
+    except:
+        return []
 
-        // --- Components ---
+def save_price(vp_id, price):
+    try:
+        data = {"vendor_product_id": vp_id, "price": price}
+        requests.post(f"{SUPABASE_URL}/rest/v1/prices", headers=headers, json=data)
+        print(f"   💾 저장: {price:,}원")
+    except:
+        pass
 
-        const App = () => {
-            const [realPrices, setRealPrices] = React.useState([]);
-            const [loading, setLoading] = React.useState(true);
-            const [activeView, setActiveView] = React.useState('price');
+def clean_price(text):
+    try:
+        return int(text.replace(",", "").replace("원", "").strip())
+    except:
+        return 0
 
-            // --- Fetch Data from Supabase ---
-            React.useEffect(() => {
-                const fetchPrices = async () => {
-                    try {
-                        setLoading(true);
-                        // 1. Fetch Prices with Product Info (Joining tables manually for simplicity)
-                        // Fetch Prices
-                        const { data: pricesData, error: priceError } = await supabase
-                            .from('prices')
-                            .select('*')
-                            .order('created_at', { ascending: false })
-                            .limit(10);
+def run_crawler():
+    # 1. DB에서 모든 정보 가져오기
+    vendors = get_vendors_from_db() # 쇼핑몰 정보 (아이디/비번 포함)
+    tasks = get_tasks_from_db()     # 상품 URL 목록
+
+    if not vendors or not tasks:
+        print("설정이나 할 일이 없습니다. 웹사이트 '쇼핑몰 관리'에서 설정을 추가해주세요.")
+        return
+
+    # 2. 쇼핑몰 ID 기준으로 매핑 (편리한 조회를 위해)
+    vendor_map = {v['id']: v for v in vendors}
+
+    # 3. 쇼핑몰별로 할 일 분류
+    grouped_tasks = {}
+    for task in tasks:
+        v_id = task['vendor_id']
+        if v_id not in grouped_tasks: grouped_tasks[v_id] = []
+        grouped_tasks[v_id].append(task)
+
+    # 4. 브라우저 시작
+    chrome_options = Options()
+    # chrome_options.add_argument("--headless") # 화면 없이 실행하려면 주석 해제
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver.implicitly_wait(5)
+
+    try:
+        # 5. 쇼핑몰별 순회
+        for v_id, vendor_tasks in grouped_tasks.items():
+            config = vendor_map.get(v_id)
+            if not config: continue
+
+            print(f"\n🏢 [{config['name']}] 작업을 시작합니다.")
+
+            # (1) 로그인
+            if config.get('login_url') and config.get('login_id'):
+                try:
+                    print(f"   🔑 로그인 시도... ({config['login_url']})")
+                    driver.get(config['login_url'])
+                    time.sleep(2)
+                    
+                    # DB에 있는 Selector를 사용하여 입력
+                    if config.get('selector_id'):
+                        driver.find_element(By.CSS_SELECTOR, config['selector_id']).send_keys(config['login_id'])
+                    if config.get('selector_pw'):
+                        driver.find_element(By.CSS_SELECTOR, config['selector_pw']).send_keys(config['login_pw'])
+                        driver.find_element(By.CSS_SELECTOR, config['selector_pw']).send_keys(Keys.RETURN)
+                    
+                    time.sleep(3)
+                    print("   로그인 완료 (추정)")
+                except Exception as e:
+                    print(f"   ⚠️ 로그인 중 오류: {e}")
+            else:
+                print("   (로그인 정보가 없어 건너뜁니다)")
+
+            # (2) 상품 가격 수집
+            for task in vendor_tasks:
+                print(f"   ➳ [{task['product_name']}] 이동")
+                try:
+                    driver.get(task['url'])
+                    time.sleep(1.5)
+                    
+                    selector = config.get('selector_price')
+                    if selector:
+                        price_text = driver.find_element(By.CSS_SELECTOR, selector).text
+                        price = clean_price(price_text)
+                        print(f"      가격: {price:,}원")
+                        if price > 0: save_price(task['id'], price)
+                    else:
+                        print("      (가격 Selector 설정이 없습니다)")
                         
-                        if (priceError) throw priceError;
+                except Exception as e:
+                    print(f"      X 실패: {e}")
 
-                        // Fetch Vendor Products to get names
-                        if (pricesData && pricesData.length > 0) {
-                            const vpIds = pricesData.map(p => p.vendor_product_id);
-                            const { data: vpData, error: vpError } = await supabase
-                                .from('vendor_products')
-                                .select('*')
-                                .in('id', vpIds);
-                            
-                            if (vpError) throw vpError;
+    finally:
+        driver.quit()
+        print("\n🤖 작업 종료")
 
-                            // Merge Data
-                            const combined = pricesData.map(p => {
-                                const productInfo = vpData.find(vp => vp.id === p.vendor_product_id);
-                                return {
-                                    ...p,
-                                    productName: productInfo ? productInfo.product_name : '알 수 없는 상품',
-                                    url: productInfo ? productInfo.url : '#'
-                                };
-                            });
-                            setRealPrices(combined);
-                        }
-                    } catch (error) {
-                        console.error("Error fetching data:", error);
-                    } finally {
-                        setLoading(false);
-                    }
-                };
-
-                fetchPrices();
-            }, []);
-
-            return (
-                <div className="min-h-screen flex flex-col md:flex-row">
-                    {/* Sidebar */}
-                    <div className="w-full md:w-64 bg-white border-r border-slate-200 flex flex-col">
-                        <div className="h-16 flex items-center px-6 border-b border-slate-100 font-bold text-xl text-slate-800 gap-2">
-                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">+</div>
-                            DentalPrice
-                        </div>
-                        <div className="p-4 space-y-2">
-                            <button onClick={() => setActiveView('price')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeView === 'price' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <Icon name="search" size={18} /> 가격비교 (전체)
-                            </button>
-                            <button onClick={() => setActiveView('live')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeView === 'live' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <Icon name="activity" size={18} /> 
-                                실시간 수집 현황
-                                <span className="ml-auto bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">LIVE</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Main Content */}
-                    <div className="flex-1 bg-slate-50 p-4 md:p-8 overflow-y-auto">
-                        {/* Header */}
-                        <div className="flex justify-between items-center mb-8">
-                            <div>
-                                <h1 className="text-2xl font-bold text-slate-800">
-                                    {activeView === 'price' ? '치과재료 최저가 검색' : '실시간 DB 수집 로그'}
-                                </h1>
-                                <p className="text-slate-500 text-sm mt-1">
-                                    {activeView === 'price' ? '다나와/에누리 방식의 가격비교 서비스입니다.' : '파이썬 크롤러가 수집한 데이터가 여기에 표시됩니다.'}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* View: Live Data Log */}
-                        {activeView === 'live' && (
-                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                                    <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                                        <Icon name="database" size={16} /> Supabase 'prices' 테이블 데이터
-                                    </h3>
-                                    <button onClick={() => window.location.reload()} className="text-xs flex items-center gap-1 text-slate-500 hover:text-blue-600">
-                                        <Icon name="refresh-cw" size={12} /> 새로고침
-                                    </button>
-                                </div>
-                                
-                                {loading ? (
-                                    <div className="p-12 text-center text-slate-400">데이터를 불러오는 중...</div>
-                                ) : realPrices.length === 0 ? (
-                                    <div className="p-12 text-center text-slate-400">
-                                        <p>아직 수집된 데이터가 없습니다.</p>
-                                        <p className="text-xs mt-2">파이썬 크롤러를 실행해서 데이터를 넣어주세요!</p>
-                                    </div>
-                                ) : (
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
-                                            <tr>
-                                                <th className="p-4">수집 시간</th>
-                                                <th className="p-4">상품명 (DB)</th>
-                                                <th className="p-4 text-right">수집 가격</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {realPrices.map((item) => (
-                                                <tr key={item.id} className="hover:bg-blue-50/50 transition-colors">
-                                                    <td className="p-4 text-slate-500 text-xs">
-                                                        {new Date(item.created_at).toLocaleString()}
-                                                    </td>
-                                                    <td className="p-4 font-medium text-slate-900">
-                                                        {item.productName}
-                                                    </td>
-                                                    <td className="p-4 text-right font-bold text-blue-600">
-                                                        {item.price.toLocaleString()}원
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
-                            </div>
-                        )}
-
-                        {/* View: Mock Price Comparison */}
-                        {activeView === 'price' && (
-                            <div className="space-y-4">
-                                {/* Banner for Real DB Connection */}
-                                {realPrices.length > 0 && (
-                                    <div className="bg-gradient-to-r from-indigo-500 to-blue-600 rounded-xl p-4 text-white flex items-center justify-between shadow-md mb-6">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-white/20 rounded-full">
-                                                <Icon name="check-circle" size={20} />
-                                            </div>
-                                            <div>
-                                                <h3 className="font-bold">DB 연동 성공!</h3>
-                                                <p className="text-xs text-indigo-100">파이썬 크롤러가 수집한 {realPrices.length}개의 최신 가격 데이터가 있습니다.</p>
-                                            </div>
-                                        </div>
-                                        <button onClick={() => setActiveView('live')} className="px-4 py-2 bg-white text-blue-600 text-xs font-bold rounded-lg hover:bg-indigo-50 transition-colors">
-                                            데이터 확인하기
-                                        </button>
-                                    </div>
-                                )}
-
-                                <div className="grid gap-4">
-                                    {MOCK_PRODUCTS.map(product => (
-                                        <div key={product.id} className="bg-white rounded-xl border border-slate-200 p-5 flex gap-6 hover:shadow-md transition-shadow">
-                                            <div className="w-32 h-32 bg-slate-50 rounded-lg flex items-center justify-center text-slate-300">
-                                                <Icon name="package" size={40} />
-                                            </div>
-                                            <div className="flex-1">
-                                                <h3 className="text-lg font-bold text-slate-900">{product.name}</h3>
-                                                <div className="flex gap-2 mt-1 mb-4">
-                                                    {product.specs.map((s, i) => <span key={i} className="text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-600">{s}</span>)}
-                                                </div>
-                                                <div className="space-y-2">
-                                                    {product.vendors.map((v, idx) => (
-                                                        <div key={idx} className="flex justify-between items-center text-sm border-b border-slate-50 last:border-0 pb-2 last:pb-0">
-                                                            <span className="text-slate-600">{v.name}</span>
-                                                            <span className="font-bold text-slate-900">{v.price.toLocaleString()}원</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    run_crawler()
