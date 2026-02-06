@@ -1,144 +1,340 @@
-# ==============================================================================
-# [필수] 실행 전 터미널(명령 프롬프트)에 아래 명령어를 입력해서 설치해주세요!
-# pip install selenium webdriver-manager
-# ==============================================================================
-
-import time
-import sys
-
-# 라이브러리 설치 여부 확인
-try:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.keys import Keys
-    from selenium.webdriver.chrome.options import Options
-    from webdriver_manager.chrome import ChromeDriverManager
-except ImportError:
-    print("\n❌ 오류: 필수 라이브러리가 설치되지 않았습니다.")
-    print("   터미널에 다음 명령어를 입력해서 설치해주세요:")
-    print("   pip install selenium webdriver-manager\n")
-    sys.exit(1)
-
-# ==============================================================================
-# [설정 구역] 자주 가는 쇼핑몰들을 여기에 등록하세요!
-# ==============================================================================
-
-MY_SITES = {
-    # [1] 덴탈모아 (예시)
-    "dentalmore": {
-        "name": "덴탈모아",
-        # 1. 로그인 정보
-        "login_url": "https://www.dentalmore.com/member/login.html",
-        "id": "doctor1234",
-        "pw": "password!",
-        "selectors": {
-            "id": "#member_id",      # 아이디 입력창
-            "pw": "#member_passwd",  # 비번 입력창
-        },
-        # 2. 검색 설정 (검색어 부분은 {}로 비워두세요)
-        "search_url": "https://www.dentalmore.com/shop/search.php?q={}",
-        # 3. 결과 긁어오기 설정 (F12로 찾아야 함)
-        "result_selectors": {
-            "item": ".product_item", # 상품 1개를 감싸는 박스
-            "name": ".name",         # 상품명
-            "price": ".price"        # 가격
-        }
-    },
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>덴탈프라이스 (DentalPrice) - 치과재료 통합 관리</title>
     
-    # [2] 이덴트 (직접 채워보세요!)
-    "ident": {
-        "name": "이덴트",
-        "login_url": "https://www.ident.co.kr/login",
-        "id": "my_id",
-        "pw": "my_pw",
-        "selectors": {
-            "id": "#login_id",
-            "pw": "#login_pw",
-        },
-        "search_url": "https://www.ident.co.kr/search?keyword={}",
-        "result_selectors": {
-            "item": ".goods_list li", # 리스트의 각 항목
-            "name": ".goods_name",
-            "price": ".goods_price"
-        }
-    }
-}
-
-# ==============================================================================
-
-def run_personal_searcher():
-    # 1. 검색어 입력 받기
-    keyword = input("\n🔎 검색할 품목명을 입력하세요 (예: Z250): ")
-    if not keyword: return
-
-    print("\n🤖 브라우저를 실행합니다...")
-    chrome_options = Options()
-    # chrome_options.add_argument("--headless") # 브라우저 창 안 보려면 주석 해제
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        driver.implicitly_wait(5)
-    except Exception as e:
-        print(f"\n❌ 브라우저 실행 중 오류 발생: {e}")
-        print("   (크롬 브라우저가 설치되어 있는지 확인해주세요.)")
-        return
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-    print(f"\n--- '{keyword}' 가격 검색 시작 ---\n")
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
 
-    for site_key, config in MY_SITES.items():
-        site_name = config['name']
-        print(f"🏢 [{site_name}] 접속 중...")
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-        try:
-            # 1. 로그인 (먼저 로그인해야 회원가가 보임)
-            driver.get(config['login_url'])
-            time.sleep(1)
-            
-            # 이미 로그인 되어 있는지 체크하는 로직은 생략 (단순화)
-            try:
-                driver.find_element(By.CSS_SELECTOR, config['selectors']['id']).send_keys(config['id'])
-                driver.find_element(By.CSS_SELECTOR, config['selectors']['pw']).send_keys(config['pw'])
-                driver.find_element(By.CSS_SELECTOR, config['selectors']['pw']).send_keys(Keys.RETURN)
-                time.sleep(2) # 로그인 대기
-            except:
-                print("   (이미 로그인 상태이거나 입력창을 못 찾음)")
+    <script type="text/babel">
+        // --- 1. Supabase Client Setup ---
+        const SUPABASE_URL = "https://kkdwgmpexkuwqyzkgvrh.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrZHdnbXBleGt1d3F5emtndnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NjA2NjgsImV4cCI6MjA4NDQzNjY2OH0.f1AOisSfwWEdrW3XdfurGT0-PT4wqrcoAVpsjzgzD1I";
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-            # 2. 검색 페이지로 바로 이동
-            # 검색창에 타이핑하는 것보다, 주소창에 검색어를 넣는 게 훨씬 빠르고 정확합니다.
-            target_url = config['search_url'].format(keyword)
-            driver.get(target_url)
-            time.sleep(2)
+        // --- Icons Wrapper ---
+        const Icon = ({ name, size = 20, className = "" }) => {
+            React.useEffect(() => { lucide.createIcons(); }, [name]);
+            return <i data-lucide={name} width={size} height={size} className={className}></i>;
+        };
 
-            # 3. 결과 긁어오기
-            items = driver.find_elements(By.CSS_SELECTOR, config['result_selectors']['item'])
-            
-            print(f"   ✓ 검색 결과 {len(items)}개 발견")
-            
-            # 상위 3개만 보여주기
-            count = 0
-            for item in items:
-                if count >= 3: break # 너무 많이 나오면 보기 힘드니까 3개만
-                try:
-                    name = item.find_element(By.CSS_SELECTOR, config['result_selectors']['name']).text
-                    price = item.find_element(By.CSS_SELECTOR, config['result_selectors']['price']).text
-                    print(f"      - {name} : {price}")
-                    count += 1
-                except:
-                    continue
-            
-            if count == 0:
-                print("      (상품 정보를 읽지 못했습니다. Selector를 확인하세요)")
+        // --- Mock Data (가격비교 화면용 예시) ---
+        const MOCK_PRODUCTS = [
+            { id: 1, name: "3M Filtek Z250", category: "수복재료", capacity: 4, unit: "g", vendors: [{ name: "덴탈모아", price: 42000 }, { name: "이덴트", price: 43500 }], specs: ["4g Syringe", "A2"] },
+            { id: 2, name: "GC Fuji I Luting", category: "접착/시멘트", capacity: 1, unit: "set", vendors: [{ name: "오스템몰", price: 85000 }], specs: ["35g Powder"] }
+        ];
 
-        except Exception as e:
-            print(f"   X 오류 발생: {e}")
-        
-        print("-" * 30)
+        // --- Components ---
 
-    print("\n✨ 모든 검색이 완료되었습니다.")
-    # 결과를 확인하도록 바로 끄지 않고 입력을 기다림
-    input("종료하려면 엔터키를 누르세요...")
-    driver.quit()
+        // [컴포넌트 1] 쇼핑몰 관리 (VendorSettings)
+        const VendorSettings = () => {
+            const [vendors, setVendors] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [isEditing, setIsEditing] = React.useState(false);
+            const [formData, setFormData] = React.useState({
+                name: '', base_url: '', login_url: '',
+                login_id: '', login_pw: '',
+                selector_id: '', selector_pw: '', selector_price: ''
+            });
 
-if __name__ == "__main__":
-    run_personal_searcher()
+            const fetchVendors = async () => {
+                setLoading(true);
+                const { data, error } = await supabase.from('vendors').select('*').order('created_at');
+                if (!error) setVendors(data);
+                setLoading(false);
+            };
+
+            React.useEffect(() => { fetchVendors(); }, []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!formData.name) return alert('쇼핑몰 이름은 필수입니다.');
+
+                const { error } = await supabase.from('vendors').insert([formData]);
+                
+                if (error) {
+                    alert('저장 실패: ' + error.message);
+                } else {
+                    alert('성공적으로 저장되었습니다!');
+                    setFormData({ name: '', base_url: '', login_url: '', login_id: '', login_pw: '', selector_id: '', selector_pw: '', selector_price: '' });
+                    setIsEditing(false);
+                    fetchVendors();
+                }
+            };
+
+            const handleDelete = async (id) => {
+                if(!confirm("정말 삭제하시겠습니까?")) return;
+                const { error } = await supabase.from('vendors').delete().eq('id', id);
+                if (!error) fetchVendors();
+            };
+
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800">쇼핑몰 설정</h2>
+                            <p className="text-sm text-slate-500">크롤러가 접속할 쇼핑몰 정보를 관리합니다.</p>
+                        </div>
+                        <button 
+                            onClick={() => setIsEditing(!isEditing)}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2 transition-colors shadow-sm"
+                        >
+                            <Icon name={isEditing ? "x" : "plus"} size={18} />
+                            {isEditing ? "닫기" : "쇼핑몰 추가"}
+                        </button>
+                    </div>
+
+                    {/* 입력 폼 */}
+                    {isEditing && (
+                        <div className="bg-white p-6 rounded-xl border border-blue-200 shadow-md">
+                            <h3 className="text-lg font-bold mb-4 text-slate-700 flex items-center gap-2">
+                                <Icon name="edit-3" size={18} /> 새 쇼핑몰 정보 입력
+                            </h3>
+                            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="col-span-2 md:col-span-1">
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">쇼핑몰 이름</label>
+                                    <input type="text" className="w-full border border-slate-300 p-2 rounded text-sm focus:border-blue-500 outline-none" placeholder="예: 덴탈모아" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                                </div>
+                                <div className="col-span-2 md:col-span-1">
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">메인 주소 (URL)</label>
+                                    <input type="text" className="w-full border border-slate-300 p-2 rounded text-sm focus:border-blue-500 outline-none" placeholder="https://..." value={formData.base_url} onChange={e => setFormData({...formData, base_url: e.target.value})} />
+                                </div>
+                                
+                                <div className="col-span-2 border-t border-slate-100 my-2"></div>
+                                
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-bold text-blue-600 mb-1">로그인 페이지 주소 (필수)</label>
+                                    <input type="text" className="w-full border border-blue-200 p-2 rounded text-sm bg-blue-50 focus:border-blue-500 outline-none" placeholder="https://.../login.html" value={formData.login_url} onChange={e => setFormData({...formData, login_url: e.target.value})} />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">로그인 ID</label>
+                                    <input type="text" className="w-full border border-slate-300 p-2 rounded text-sm focus:border-blue-500 outline-none" value={formData.login_id} onChange={e => setFormData({...formData, login_id: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">로그인 PW</label>
+                                    <input type="password" className="w-full border border-slate-300 p-2 rounded text-sm focus:border-blue-500 outline-none" value={formData.login_pw} onChange={e => setFormData({...formData, login_pw: e.target.value})} />
+                                </div>
+
+                                <div className="col-span-2 border-t border-slate-100 my-2"></div>
+                                <div className="col-span-2 text-xs text-slate-400 bg-slate-50 p-2 rounded">
+                                    💡 <strong>팁:</strong> 쇼핑몰에서 F12(개발자 도구)를 눌러 입력창의 선택자(Selector)를 찾아 입력하세요. (예: #id, .input_class)
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">ID 입력창 선택자</label>
+                                    <input type="text" className="w-full border border-slate-300 p-2 rounded text-sm font-mono bg-slate-50 focus:border-blue-500 outline-none" placeholder="#id_input" value={formData.selector_id} onChange={e => setFormData({...formData, selector_id: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">PW 입력창 선택자</label>
+                                    <input type="text" className="w-full border border-slate-300 p-2 rounded text-sm font-mono bg-slate-50 focus:border-blue-500 outline-none" placeholder="#pw_input" value={formData.selector_pw} onChange={e => setFormData({...formData, selector_pw: e.target.value})} />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">가격 표시 선택자</label>
+                                    <input type="text" className="w-full border border-slate-300 p-2 rounded text-sm font-mono bg-slate-50 focus:border-blue-500 outline-none" placeholder=".product_price" value={formData.selector_price} onChange={e => setFormData({...formData, selector_price: e.target.value})} />
+                                </div>
+
+                                <button type="submit" className="col-span-2 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 mt-2 shadow-md transition-colors">
+                                    저장하기
+                                </button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* 리스트 */}
+                    <div className="grid gap-4">
+                        {loading ? <p className="text-center text-slate-400 py-10">데이터를 불러오는 중...</p> : vendors.length === 0 ? <p className="text-center text-slate-400 py-10 bg-white rounded-xl border border-dashed border-slate-300">등록된 쇼핑몰이 없습니다. 추가해주세요.</p> : vendors.map(vendor => (
+                            <div key={vendor.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center hover:shadow-md transition-shadow">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="font-bold text-lg text-slate-800">{vendor.name}</h3>
+                                        {vendor.base_url && <a href={vendor.base_url} target="_blank" className="text-slate-400 hover:text-blue-500"><Icon name="external-link" size={14} /></a>}
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                        <span className={`px-2 py-1 rounded border ${vendor.login_id ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                            {vendor.login_id ? '로그인 정보 있음' : '로그인 정보 없음'}
+                                        </span>
+                                        <span className={`px-2 py-1 rounded border ${vendor.selector_price ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                                            가격 Selector: {vendor.selector_price || '미설정'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button onClick={() => handleDelete(vendor.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                    <Icon name="trash-2" size={18} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // [컴포넌트 2] 실시간 수집 현황 (LiveView)
+        const LiveView = () => {
+            const [realPrices, setRealPrices] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+
+            React.useEffect(() => {
+                const fetchPrices = async () => {
+                    try {
+                        setLoading(true);
+                        const { data: pricesData } = await supabase.from('prices').select('*').order('created_at', { ascending: false }).limit(20);
+                        
+                        if (pricesData && pricesData.length > 0) {
+                            const vpIds = pricesData.map(p => p.vendor_product_id);
+                            const { data: vpData } = await supabase.from('vendor_products').select('*').in('id', vpIds);
+                            
+                            const combined = pricesData.map(p => {
+                                const productInfo = vpData.find(vp => vp.id === p.vendor_product_id);
+                                return { ...p, productName: productInfo ? productInfo.product_name : '삭제된 상품', url: productInfo ? productInfo.url : '#' };
+                            });
+                            setRealPrices(combined);
+                        }
+                    } catch (error) {
+                        console.error("Error:", error);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                fetchPrices();
+            }, []);
+
+            return (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
+                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                            <Icon name="database" size={16} /> Supabase 수집 로그 (최신 20건)
+                        </h3>
+                        <button onClick={() => window.location.reload()} className="text-xs flex items-center gap-1 text-slate-500 hover:text-blue-600">
+                            <Icon name="refresh-cw" size={12} /> 새로고침
+                        </button>
+                    </div>
+                    {loading ? <div className="p-12 text-center text-slate-400">로딩 중...</div> : 
+                     realPrices.length === 0 ? <div className="p-12 text-center text-slate-400">수집된 데이터가 없습니다. 크롤러를 실행해주세요.</div> : (
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                                <tr><th className="p-4">시간</th><th className="p-4">상품명</th><th className="p-4 text-right">가격</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {realPrices.map((item) => (
+                                    <tr key={item.id} className="hover:bg-blue-50/50">
+                                        <td className="p-4 text-slate-500 text-xs">{new Date(item.created_at).toLocaleString()}</td>
+                                        <td className="p-4 font-medium text-slate-900">{item.productName}</td>
+                                        <td className="p-4 text-right font-bold text-blue-600">{item.price.toLocaleString()}원</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            );
+        };
+
+        // [메인] 앱 컴포넌트
+        const App = () => {
+            const [activeView, setActiveView] = React.useState('price');
+
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row">
+                    {/* Sidebar */}
+                    <div className="w-full md:w-64 bg-white border-r border-slate-200 flex flex-col shadow-sm z-10">
+                        <div className="h-16 flex items-center px-6 border-b border-slate-100 font-bold text-xl text-slate-800 gap-2">
+                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-lg">+</div>
+                            DentalPrice
+                        </div>
+                        <div className="p-4 space-y-1">
+                            <div className="text-xs font-bold text-slate-400 px-4 mb-2 mt-2 uppercase tracking-wider">메뉴</div>
+                            <button onClick={() => setActiveView('price')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeView === 'price' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <Icon name="search" size={18} /> 가격비교 (MVP)
+                            </button>
+                            <button onClick={() => setActiveView('live')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeView === 'live' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <Icon name="activity" size={18} /> 실시간 수집 현황
+                            </button>
+                            
+                            <div className="border-t border-slate-100 my-3"></div>
+                            
+                            <div className="text-xs font-bold text-slate-400 px-4 mb-2 uppercase tracking-wider">관리자 설정</div>
+                            <button onClick={() => setActiveView('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${activeView === 'settings' ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <Icon name="settings" size={18} /> 쇼핑몰 관리
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 bg-slate-50 p-4 md:p-8 overflow-y-auto h-screen">
+                        <header className="mb-8">
+                            <h1 className="text-2xl font-bold text-slate-800">
+                                {activeView === 'price' && '치과재료 최저가 검색'}
+                                {activeView === 'live' && '실시간 DB 수집 로그'}
+                                {activeView === 'settings' && '크롤러 설정 관리'}
+                            </h1>
+                            <p className="text-slate-500 text-sm mt-1">
+                                {activeView === 'price' && '다나와/에누리 방식의 가격비교 프로토타입입니다.'}
+                                {activeView === 'live' && '파이썬 크롤러가 수집하여 Supabase에 저장한 데이터입니다.'}
+                                {activeView === 'settings' && '각 쇼핑몰의 로그인 정보와 수집 위치(Selector)를 설정합니다.'}
+                            </p>
+                        </header>
+
+                        {activeView === 'settings' && <VendorSettings />}
+                        {activeView === 'live' && <LiveView />}
+                        {activeView === 'price' && (
+                            <div className="space-y-4 animate-fade-in">
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center py-12">
+                                    <Icon name="package" size={48} className="mx-auto text-slate-300 mb-4" />
+                                    <h3 className="text-lg font-bold text-slate-700">MVP 예시 화면</h3>
+                                    <p className="text-slate-500 mb-6">아래는 디자인 예시 데이터입니다. 실제 데이터는 '실시간 수집 현황'에서 확인하세요.</p>
+                                    <div className="grid gap-4 text-left max-w-2xl mx-auto">
+                                        {MOCK_PRODUCTS.map(product => (
+                                            <div key={product.id} className="border border-slate-100 p-4 rounded-lg flex justify-between items-center bg-slate-50">
+                                                <div>
+                                                    <div className="font-bold text-slate-800">{product.name}</div>
+                                                    <div className="text-xs text-slate-500">{product.vendors[0].name} 최저가</div>
+                                                </div>
+                                                <div className="text-blue-600 font-bold">{product.vendors[0].price.toLocaleString()}원</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
